@@ -647,7 +647,7 @@ function topbar() {
   return '<div class="topbar"><img class="brand" src="' + LOGO + '" alt="Appora"><button class="sp-main" type="button" data-go="cari">' + ic("search") + "<span>Telusuri aplikasi dan situs</span></button>" +
     '<button class="avatar" id="avatar" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Akun">' + ini + "</button>" +
     '<div class="menu" id="menu" hidden><div class="who"><b>Halo, ' + esc(user || "") + '</b><small>Nama tersimpan di perangkat ini</small></div>' +
-    '<button type="button" data-go="profil">Profil saya</button><button type="button" data-act="guide">Cara pasang APK</button><button type="button" class="danger" data-act="logout">Keluar</button></div></div>';
+    '<button type="button" data-go="profil">Profil saya</button><button type="button" data-go="developer">Developer</button><button type="button" data-act="guide">Cara pasang APK</button><button type="button" class="danger" data-act="logout">Keluar</button></div></div>';
 }
 
 function homeHtml() {
@@ -845,7 +845,7 @@ function profileHtml() {
     h += '<div class="empty">' + ic("star") + "<b>Belum ada ulasan</b><span>Beri rating di halaman aplikasi, dan ulasanmu terkumpul di sini.</span></div>";
   }
 
-  h += '<div class="pf-actions"><button type="button" data-act="guide">' + ic("help") + 'Cara pasang APK</button><button type="button" class="danger" data-act="logout">' + ic("close") + "Keluar</button></div>";
+  h += '<div class="pf-actions"><button type="button" data-go="developer">' + ic("code") + 'Developer</button><button type="button" data-act="guide">' + ic("help") + 'Cara pasang APK</button><button type="button" class="danger" data-act="logout">' + ic("close") + "Keluar</button></div>";
   return h;
 }
 
@@ -2043,6 +2043,182 @@ route();
 })();
 </script>
 
+<script>
+/* Halaman Developer: formulir yang menghasilkan blok untuk apps.js */
+(function () {
+  var CATS = ["Personalisasi", "Alat", "Game", "Produktivitas", "Sosial", "Hiburan", "Lainnya"];
+  var MON = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  var EDIT_URL = "https://github.com/kingkaff13-boop/appora/edit/main/apps.js";
+  var REL_URL = "https://github.com/kingkaff13-boop/appora/releases/new";
+  var F = null;
+  var slugTouched = false;
+
+  function today() { var d = new Date(); return d.getDate() + " " + MON[d.getMonth()] + " " + d.getFullYear(); }
+  function blank() {
+    return { mode: "baru", kind: "apk", slug: "", name: "", cat: "Alat", short: "", desc: "", version: "1.0", size: "", updated: today(), url: "", logo: "" };
+  }
+  function fromItem(it) {
+    return {
+      mode: "ubah", kind: it.kind === "situs" ? "situs" : "apk", slug: it.slug, name: it.name || "", cat: it.cat || "Lainnya",
+      short: it.short || "", desc: it.desc || "", version: it.version || "", size: it.size || "", updated: it.updated || today(),
+      url: it.url || "", logo: (it.logo && !/^data:/.test(it.logo)) ? it.logo : ""
+    };
+  }
+  function slugify(s) {
+    return String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
+  }
+  function q(v) { return JSON.stringify(String(v == null ? "" : v)); }
+
+  function check(f) {
+    var e = {};
+    if (!f.name.trim()) e.name = "Isi nama aplikasi.";
+    if (!f.slug) e.slug = "Slug kosong. Isi nama dulu.";
+    else if (!/^[a-z0-9][a-z0-9-]*$/.test(f.slug)) e.slug = "Pakai huruf kecil, angka, dan tanda -.";
+    else if (f.mode === "baru" && ITEMS.some(function (it) { return it.slug === f.slug; })) e.slug = "Slug ini sudah dipakai. Ganti, atau pilih aplikasi itu di atas untuk mengubahnya.";
+    if (!f.short.trim()) e.short = "Isi keterangan singkat.";
+    if (f.url.trim() && !/^https?:\/\/\S+$/i.test(f.url.trim())) e.url = "Tautan harus diawali https://";
+    return e;
+  }
+
+  function block(f) {
+    var ps = [
+      "slug: " + q(f.slug), "name: " + q(f.name.trim()), "kind: " + q(f.kind), "cat: " + q(f.cat),
+      "short: " + q(f.short.trim()), "desc: " + q((f.desc || f.short).trim()),
+      "version: " + q(f.version.trim()), "size: " + q(f.size.trim()), "updated: " + q(f.updated.trim()), "url: " + q(f.url.trim())
+    ];
+    if (f.logo.trim()) ps.push("logo: " + q(f.logo.trim()));
+    return "  { " + ps.join(", ") + " },";
+  }
+
+  function bar() {
+    return '<div class="appbar"><button class="iconbtn" type="button" data-go="profil" aria-label="Kembali">' + ic("back") + '</button><div class="grow">Developer</div></div>';
+  }
+  function field(id, label, html, hint) {
+    return '<div class="dv-f"><label for="dp-' + id + '">' + label + "</label>" + html + (hint ? "<small>" + hint + "</small>" : "") + '<small class="dp-err" id="dp-e-' + id + '" style="color:var(--bad)"></small></div>';
+  }
+  function input(id, val, ph, extra) {
+    return '<input class="dv-in" id="dp-' + id + '" value="' + esc(val) + '" placeholder="' + esc(ph || "") + '" autocomplete="off" autocapitalize="off" ' + (extra || "") + ">";
+  }
+
+  function page() {
+    var pick = '<div class="dv-seg" role="group" aria-label="Pilih aplikasi">' +
+      '<button type="button" data-dp="mode:baru" aria-pressed="' + (F.mode === "baru") + '">Aplikasi baru</button>' +
+      '<button type="button" data-dp="mode:ubah" aria-pressed="' + (F.mode === "ubah") + '">Ubah yang ada</button></div>';
+    var existing = "";
+    if (F.mode === "ubah") {
+      existing = '<div class="dv-f"><label for="dp-pilih">Pilih aplikasi</label><select class="dv-in" id="dp-pilih">' +
+        ITEMS.map(function (it) { return '<option value="' + esc(it.slug) + '"' + (it.slug === F.slug ? " selected" : "") + ">" + esc(it.name) + "</option>"; }).join("") +
+        "</select><small>Dipakai untuk rilis versi baru: naikkan versi, ganti tautan, dan ukuran.</small></div>";
+    }
+    var kind = '<div class="dv-seg" role="group" aria-label="Jenis">' +
+      '<button type="button" data-dp="kind:apk" aria-pressed="' + (F.kind === "apk") + '">Aplikasi (APK)</button>' +
+      '<button type="button" data-dp="kind:situs" aria-pressed="' + (F.kind === "situs") + '">Situs web</button></div>';
+    var cat = '<select class="dv-in" id="dp-cat">' + CATS.map(function (c) { return '<option' + (c === F.cat ? " selected" : "") + ">" + c + "</option>"; }).join("") + "</select>";
+    var isApk = F.kind === "apk";
+    return bar() +
+      '<div class="dv-hero"><h1>Developer</h1><p>Isi formulir, salin hasilnya, lalu tempel ke <b>apps.js</b> di GitHub. Aplikasi langsung muncul di Appora.</p></div>' +
+      '<div class="dv-form">' + pick + existing + kind +
+      field("name", "Nama aplikasi", input("name", F.name, "Contoh: Dynamic Island", 'maxlength="40"')) +
+      field("slug", "Slug (alamat pendek)", input("slug", F.slug, "dynamic-island", F.mode === "ubah" ? "disabled" : 'maxlength="40"'), "Otomatis dari nama. Huruf kecil, tanpa spasi.") +
+      field("cat", "Kategori", cat) +
+      field("short", "Keterangan singkat (satu baris)", input("short", F.short, "Pil notifikasi melayang di atas layar", 'maxlength="80"')) +
+      field("desc", "Deskripsi lengkap", '<textarea class="dv-in" id="dp-desc" placeholder="Ceritakan fungsi aplikasimu" maxlength="600">' + esc(F.desc) + "</textarea>") +
+      field("version", "Versi", input("version", F.version, "1.0"), "Naikkan setiap rilis baru supaya pengguna melihat tombol Perbarui.") +
+      (isApk ? field("size", "Ukuran", input("size", F.size, "12 MB")) : "") +
+      field("updated", "Tanggal rilis", input("updated", F.updated, "13 Nov 2026")) +
+      field("url", isApk ? "Tautan unduhan APK" : "Alamat situs", input("url", F.url, "https://...", 'inputmode="url"'),
+        isApk ? 'Boleh dari mana saja, misalnya rilis GitHub, Google Drive, atau situsmu. <a href="' + REL_URL + '" target="_blank" rel="noopener">Buat rilis GitHub</a>. Kosongkan kalau belum siap: tombol jadi "Segera".' : "Alamat lengkap situsmu, diawali https://") +
+      field("logo", "Logo (boleh kosong)", input("logo", F.logo, "logo/aplikasi.png"), "Unggah gambarnya ke repo dulu, lalu tulis nama file-nya di sini.") +
+      '<div class="dv-f"><div class="lb">Hasil untuk apps.js</div><pre id="dp-out" style="margin:0;padding:12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;color:var(--ink)"></pre></div>' +
+      '<div id="dp-howto" class="dv-note"></div>' +
+      '<div style="display:flex;gap:10px;flex-wrap:wrap"><button class="dv-go" type="button" data-dp="copy" style="flex:1;min-width:140px">Salin</button>' +
+      '<a class="dv-btn" id="dp-open" href="' + EDIT_URL + '" target="_blank" rel="noopener" style="flex:1;min-width:140px;justify-content:center;text-decoration:none">Buka apps.js</a></div>' +
+      '<small id="dp-msg" style="color:var(--ink-soft);min-height:18px"></small></div>';
+  }
+
+  function howto() {
+    return F.mode === "baru"
+      ? "<b>Cara menempel:</b> di apps.js ketuk ikon pensil, cari baris <code>window.APPORA_APPS = [</code>, lalu tempel hasilnya <b>tepat di bawahnya</b> (baris baru). Ketuk Commit changes."
+      : "<b>Cara mengganti:</b> di apps.js ketuk ikon pensil, cari baris yang diawali <code>{ slug: " + esc(q(F.slug)) + "</code>, hapus baris lama itu, lalu tempel hasil ini. Ketuk Commit changes.";
+  }
+
+  function refreshOut() {
+    var out = document.getElementById("dp-out"); if (!out) return;
+    var e = check(F);
+    ["name", "slug", "short", "url"].forEach(function (k) { var el = document.getElementById("dp-e-" + k); if (el) el.textContent = e[k] || ""; });
+    out.textContent = block(F);
+    var h = document.getElementById("dp-howto"); if (h) h.innerHTML = howto();
+    var btn = document.querySelector('[data-dp="copy"]');
+    if (btn) { btn.disabled = !!Object.keys(e).length; btn.style.opacity = btn.disabled ? "0.5" : "1"; }
+  }
+
+  function render() { viewEl.innerHTML = page(); setNav("profil"); refreshOut(); }
+
+  function copyText(t) {
+    var msg = document.getElementById("dp-msg");
+    function ok() { if (msg) msg.textContent = "Tersalin. Sekarang tempel di apps.js."; }
+    function fallback() {
+      var out = document.getElementById("dp-out");
+      try {
+        var r = document.createRange(); r.selectNodeContents(out);
+        var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+        if (document.execCommand("copy")) { ok(); return; }
+      } catch (er) { /* lanjut */ }
+      if (msg) msg.textContent = "Tidak bisa menyalin otomatis. Tahan teks hasil di atas lalu pilih Salin.";
+    }
+    try { navigator.clipboard.writeText(t).then(ok, fallback); } catch (er) { fallback(); }
+  }
+
+  var prev = window.kafaDevRoute;
+  window.kafaDevRoute = function (h) {
+    if (h === "developer") {
+      if (!F) F = blank();
+      render();
+      return true;
+    }
+    return prev ? prev(h) : false;
+  };
+
+  document.addEventListener("input", function (e) {
+    var t = e.target, id = t && t.id;
+    if (!F || !id || id.indexOf("dp-") !== 0) return;
+    var k = id.slice(3);
+    if (k === "pilih") return;
+    if (k === "slug") { slugTouched = true; F.slug = slugify(t.value); }
+    else {
+      F[k] = t.value;
+      if (k === "name" && F.mode === "baru" && !slugTouched) {
+        F.slug = slugify(t.value);
+        var sl = document.getElementById("dp-slug"); if (sl) sl.value = F.slug;
+      }
+    }
+    refreshOut();
+  });
+  document.addEventListener("change", function (e) {
+    var t = e.target;
+    if (!F || !t) return;
+    if (t.id === "dp-cat") { F.cat = t.value; refreshOut(); }
+    if (t.id === "dp-pilih") {
+      var it = ITEMS.filter(function (x) { return x.slug === t.value; })[0];
+      if (it) { F = fromItem(it); render(); }
+    }
+  });
+  document.addEventListener("click", function (e) {
+    var b = e.target.closest && e.target.closest("[data-dp]");
+    if (!b || !F) return;
+    var v = b.getAttribute("data-dp");
+    if (v === "copy") { if (!b.disabled) copyText(block(F)); return; }
+    var p = v.split(":");
+    if (p[0] === "kind") { F.kind = p[1]; render(); return; }
+    if (p[0] === "mode") {
+      if (p[1] === F.mode) return;
+      slugTouched = false;
+      if (p[1] === "ubah" && ITEMS.length) F = fromItem(ITEMS[0]); else F = blank();
+      render();
+    }
+  });
+})();
+</script>
 <script>
 (function () {
   var L = function (id) { return document.getElementById("lg-" + id); };
