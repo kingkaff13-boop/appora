@@ -26,5 +26,5 @@
   Lebih mudah: buka Appora, menu Developer, isi formulir, lalu tempel hasilnya tepat di bawah baris window.APPORA_APPS = [
 */
 window.APPORA_APPS = [
-  
+  { slug: "aod", name: "AOD", kind: "apk", cat: "Alat", short: "AOD untuk handphone layar IPS", desc: "AOD ini untuk handphone yang tidak mendukung dan bisa di gunakan di layar IPS", version: "1.0.6", size: "74 KB", updated: "15 Nov 2026", url: "https://github.com/kingkaff13-boop/aod-poco/releases/latest/download/app-debug.apk", logo: "aod.png" },  
 ];
